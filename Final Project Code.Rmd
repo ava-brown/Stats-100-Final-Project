@@ -1,0 +1,302 @@
+---
+title: "STATS 100 Final Project: Who is Missing from the NFL Hall of Fame?"
+author: "Ava Brown"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(reshape2))
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Cleaning & Exploratory Data Analysis
+
+
+```{r}
+# import all of the different player stat datasets by position.
+db = read_csv("DB.xls.csv")
+olb = read_csv("OLB.xls.csv")
+qb = read_csv("QB.xls.csv")
+wr = read_csv("WR.xls.csv")
+de = read_csv("DE.xls.csv")
+ilb = read_csv("ILB.xls.csv")
+rb = read_csv("RB.xls.csv")
+te = read_csv("TE.xls.csv")
+
+# remove row corresponding to average HOF player for that position
+db = filter(db, Player != "Average HOF DB")
+olb = filter(ilb, Player != "Average HOF OLB")
+ilb = filter(olb, Player != "Average HOF ILB")
+de = filter(de, Player != "Average HOF DE")
+qb = filter(qb, Player != "Average HOF QB")
+rb = filter(rb, Player != "Average HOF RB")
+wr = filter(wr, Player != "Average HOF WR")
+te = filter(te, Player != "Average HOF TE")
+
+
+# merge the linebacker data sets
+lb = bind_rows(olb, ilb)
+
+# remove HOF index from statsreference (this is confounding for our model because we want to make our predictions)
+db = subset(db, select = -c(HOFm))
+qb = subset(qb, select = -c(HOFm))
+lb = subset(lb, select = -c(HOFm))
+wr = subset(wr, select = -c(HOFm))
+de = subset(de, select = -c(HOFm))
+rb = subset(rb, select = -c(HOFm))
+te = subset(te, select = -c(HOFm))
+
+# import list of HOF players 
+HOF = read_csv("HOF.xls.csv")
+
+```
+
+Add a boolean variable indicating whether or not the player is in the Hall of Fame. This will be our dependent variable of interest for modeling.
+```{r}
+# list of players in the hof
+hofs = as.list(HOF$Player)
+
+# add HOF indicator variable for DBs
+db <- db %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# add HOF indicator variable for LBs
+lb <- lb %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# add HOF indicator variable for DEs
+de <- de %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# add HOF indicator variable for RBs
+rb <- rb %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# add HOF indicator variable for QBs
+qb <- qb %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# add HOF indicator variable for WRs
+wr <- wr %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# add HOF indicator variable for TEs
+te <- te %>%
+  mutate(HOF = if_else(Player %in% hofs, 1, 0))
+
+# To correctly graph, we need a categorical indicator variable, not a numeric one
+
+# add categorical HOF indicator variable for DBs
+db <- db %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+# add HOF categorical indicator variable for LBs
+lb <- lb %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+# add HOF categorical indicator variable for DEs
+de <- de %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+# add categorical HOF indicator variable for QBs
+qb <- qb %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+# add categorical HOF indicator variable for RBs
+rb <- rb %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+# add categorical HOF indicator variable for WRs
+wr <- wr %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+# add categorical HOF indicator variable for TEs
+te <- te %>%
+  mutate(HOFcat = if_else(Player %in% hofs, "yes", "no"))
+
+```
+
+Exploratory Data Analysis -- What proportion of our data points correspond to players in the Hall of Fame?
+```{r}
+# add position identifier column to each data frame
+db$Position = "DB"
+lb$Position = "LB"
+de$Position = "DE"
+rb$Position = "RB"
+qb$Position = "QB"
+wr$Position = "WR"
+te$Position = "TE"
+
+# merge all data frames together
+all_positions = bind_rows(db, lb, de, rb, qb, wr, te)
+
+# Hall of fame distribution
+ggplot(data = all_positions, aes(x = Position, fill = HOFcat)) +
+  geom_bar(position = "dodge")
+```
+
+Data Cleaning
+```{r}
+# filter out defensive players who started playing before 2000 (accommodate changes in the game and the types of statistics available)
+db = filter(db, From >= 2000)
+lb = filter(lb, From >= 2000)
+de = filter(de, From >= 2000)
+
+# check for NAs
+sum(is.na(db))
+sum(is.na(qb))
+sum(is.na(lb))
+sum(is.na(wr))
+sum(is.na(de))
+sum(is.na(rb))
+sum(is.na(te))
+
+# add a variable for the number of years a players was in the league (or has been in the league if they are active)
+db$years_in_league = db$To - db$From
+qb$years_in_league = qb$To - qb$From
+lb$years_in_league = lb$To - lb$From
+wr$years_in_league = wr$To - wr$From
+de$years_in_league = de$To - de$From
+rb$years_in_league = rb$To - rb$From
+te$years_in_league = te$To - te$From
+
+# drop From and To variables -- years in league is more important once we have done necessary filters
+# drop HOFcat because we have an equivalent numerical indicator
+db = subset(db, select = -c(From, To, HOFcat))
+de = subset(de, select = -c(From, To, HOFcat))
+lb = subset(lb, select = -c(From, To, HOFcat))
+qb = subset(qb, select = -c(From, To, HOFcat))
+rb = subset(rb, select = -c(From, To, HOFcat))
+te = subset(te, select = -c(From, To, HOFcat))
+wr = subset(wr, select = -c(From, To, HOFcat))
+
+# filter df of HoF players to only include those who were inducted before 2024
+HOF = filter(HOF, Indct < 2024)
+```
+
+When building the clustering model, it is important to include independent paramters. The following correlation matrices reveal the connections between the statistics in the dataframe.
+```{r}
+# remove Position variable because it is categorical (not numerical) and not needed for future calculations that look at
+# each position specifically
+# remove name variable and HOFcat because they are not numeric and will cause errors for correlation matrix
+db_num = subset(db, select = -c(Player, Position))
+qb_num = subset(qb, select = -c(Player, Position))
+lb_num = subset(lb, select = -c(Player, Position))
+wr_num = subset(wr, select = -c(Player, Position))
+de_num = subset(de, select = -c(Player, Position))
+rb_num = subset(rb, select = -c(Player, Position))
+te_num = subset(te, select = -c(Player, Position))
+
+# set size of the plot
+options(repr.plot.width = 10, repr.plot.height = 10)
+
+# correlation heat map for DBs
+corDB <- round(cor(db_num), 2)
+melted_DB <- melt(corDB)
+ggplot(data = melted_DB, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Defensive Backs") 
+
+# correlation heat map for LBs
+corLB <- round(cor(lb_num), 2)
+melted_LB <- melt(corLB)
+ggplot(data = melted_LB, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Line Backers (Inside and Outside)") 
+
+# correlation heat map for DEs
+corDE <- round(cor(de_num), 2)
+melted_DE <- melt(corDE)
+ggplot(data = melted_DE, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Defensive Ends") 
+
+# correlation heat map for RBs
+corRB <- round(cor(rb_num), 2)
+melted_RB <- melt(corRB)
+ggplot(data = melted_RB, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Running Backs") 
+
+# correlation heat map for QBs
+corQB <- round(cor(qb_num), 2)
+melted_QB <- melt(corQB)
+ggplot(data = melted_QB, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Quarter Backs") 
+
+# correlation heat map for WRs
+corWR <- round(cor(wr_num), 2)
+melted_WR <- melt(corWR)
+ggplot(data = melted_WR, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Wide Receivers") 
+
+# correlation heat map for TEs
+corTE <- round(cor(te_num), 2)
+melted_TE <- melt(corTE)
+ggplot(data = melted_TE, aes(x=Var1, y=Var2, fill = value))+
+  geom_tile() + ggtitle("Correlation Heatmap for Tight Ends") 
+```
+
+## Profile of the "Typical" Hall of Fame Players for Each Postion
+
+```{r}
+
+# create df with information about only HOF players for each position
+db_hof_data = filter(db, HOF == 1)
+qb_hof_data = filter(qb, HOF == 1)
+lb_hof_data = filter(lb, HOF == 1)
+wr_hof_data = filter(wr, HOF == 1)
+de_hof_data = filter(de, HOF == 1)
+rb_hof_data = filter(rb, HOF == 1)
+te_hof_data = filter(te, HOF == 1)
+
+# create a numeric df with HOF player data
+db_hof_data = subset(db_hof_data, select = -c(Position)) 
+qb_hof_data = subset(qb_hof_data, select = -c(Position)) 
+lb_hof_data = subset(lb_hof_data, select = -c(Position)) 
+wr_hof_data = subset(wr_hof_data, select = -c(Position)) 
+de_hof_data = subset(de_hof_data, select = -c(Position)) 
+rb_hof_data = subset(rb_hof_data, select = -c(Position)) 
+te_hof_data = subset(te_hof_data, select = -c(Position)) 
+
+```
+
+Now that I have datasets of Hall of Fame players for each position, I will compute averages of their statistics to determine the "typical" Hall of Fame player by position.
+
+```{r}
+# add a row to each column for the "average" Hall of Famer
+db_hof_data = rbind(db_hof_data, data.frame(Player = "average HOF DB", t(colMeans(db_hof_data[-1]))))
+de_hof_data = rbind(de_hof_data, data.frame(Player = "average HOF DE", t(colMeans(de_hof_data[-1]))))
+lb_hof_data = rbind(lb_hof_data, data.frame(Player = "average HOF LB", t(colMeans(lb_hof_data[-1]))))
+qb_hof_data = rbind(qb_hof_data, data.frame(Player = "average HOF QB", t(colMeans(qb_hof_data[-1]))))
+rb_hof_data = rbind(rb_hof_data, data.frame(Player = "average HOF RB", t(colMeans(rb_hof_data[-1]))))
+wr_hof_data = rbind(wr_hof_data, data.frame(Player = "average HOF WR", t(colMeans(wr_hof_data[-1]))))
+te_hof_data = rbind(te_hof_data, data.frame(Player = "average HOF TE", t(colMeans(te_hof_data[-1]))))
+
+```
+
+
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
